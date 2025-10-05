@@ -1,4 +1,5 @@
-import weaviate, { type WeaviateClient, configure, vectors } from 'weaviate-client';
+import { configure, vectors } from 'weaviate-client';
+
 import { getWeaviateClient } from './weaviate-client';
 
 const COLLECTION_NAME = 'Thuy';
@@ -6,7 +7,7 @@ const COLLECTION_NAME = 'Thuy';
 /**
  * Check if a collection exists
  */
-export const collectionExists = async (name: string): Promise<boolean> => {
+const collectionExists = async (name: string): Promise<boolean> => {
   const client = await getWeaviateClient();
   try {
     const collections = await client.collections.listAll();
@@ -27,12 +28,11 @@ export const createImagesCollection = async (): Promise<void> => {
     // Check if collection already exists
     const exists = await collectionExists(COLLECTION_NAME);
     if (exists) {
-      console.log(`Collection '${COLLECTION_NAME}' already exists.`);
       return;
     }
 
     // Create the collection with schema
-    const collection = await client.collections.create({
+    await client.collections.create({
       name: COLLECTION_NAME,
       description: 'Collection for storing images with multimodal search capabilities',
       properties: [
@@ -40,6 +40,11 @@ export const createImagesCollection = async (): Promise<void> => {
           name: 'title',
           dataType: configure.dataType.TEXT,
           description: 'Title of the image file',
+        },
+        {
+          name: 'image',
+          dataType: configure.dataType.BLOB,
+          description: 'Image file',
         },
         {
           name: 'url',
@@ -63,12 +68,9 @@ export const createImagesCollection = async (): Promise<void> => {
         model: 'multimodalembedding', 
         projectId: process.env.GOOGLE_PROJECT_ID || '', 
         location: 'us-central1',
-        imageFields: [{ name: "image", weight: 0.8 }],
-        textFields: [{ name: "title", weight: 0.2 }],
+        imageFields: [{ name: "image", weight: 1 }],
       }),
     });
-
-    console.log(`Collection '${COLLECTION_NAME}' created successfully.`);
   } catch (error) {
     console.error('Error creating collection:', error);
     throw error;
@@ -83,24 +85,4 @@ export const getImagesCollection = async () => {
   return client.collections.get(COLLECTION_NAME);
 };
 
-/**
- * Delete the Images collection (useful for testing)
- */
-export const deleteImagesCollection = async (): Promise<void> => {
-  const client = await getWeaviateClient();
-
-  try {
-    const exists = await collectionExists(COLLECTION_NAME);
-    if (!exists) {
-      console.log(`Collection '${COLLECTION_NAME}' does not exist.`);
-      return;
-    }
-
-    await client.collections.delete(COLLECTION_NAME);
-    console.log(`Collection '${COLLECTION_NAME}' deleted successfully.`);
-  } catch (error) {
-    console.error('Error deleting collection:', error);
-    throw error;
-  }
-};
 

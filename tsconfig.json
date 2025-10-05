@@ -12,7 +12,10 @@
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,    
+    "noUnusedLocals": true,     // warn about unused variables and class members
+    "noUnusedParameters": true, // warn about unused function parameters
+    "noEmitOnError": false,     // optional: still emit files if you only want warnings
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

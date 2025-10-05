@@ -1,13 +1,15 @@
 #!/usr/bin/env ts-node
 
-import { getImageFiles, formatFileSize, type ImageFileInfo } from './utils';
+import { Collection, WeaviateField } from 'weaviate-client';
+
 import { createImagesCollection, getImagesCollection } from './collection';
+import { getImageFiles, formatFileSize, type ImageFileInfo } from './utils';
 import { closeWeaviateClient } from './weaviate-client';
+
 
 interface UploadOptions {
   directory: string;
   batchSize?: number;
-  skipExisting?: boolean;
 }
 
 interface UploadResult {
@@ -21,29 +23,12 @@ interface UploadResult {
  * Upload a single image to Weaviate
  */
 const uploadSingleImage = async (
-  collection: any,
+  collection: Collection,
   imageFile: ImageFileInfo,
-  skipExisting: boolean = false
 ): Promise<{ success: boolean; error?: string }> => {
   try {
-    // Check if image already exists (if skipExisting is true)
-    if (skipExisting) {
-      const existing = await collection.query.fetchObjects({
-        where: {
-          path: {
-            equal: imageFile.path
-          }
-        },
-        limit: 1
-      });
-      
-      if (existing.objects.length > 0) {
-        return { success: false, error: 'Image already exists' };
-      }
-    }
-
     // Prepare the data object
-    const dataObject: any = {
+    const dataObject: Record<string, WeaviateField> = {
       title: imageFile.name,
       url: `https://files.hungcq.com/photos/${imageFile.name}${imageFile.extension}`,
       extension: imageFile.extension,
@@ -74,9 +59,8 @@ const uploadSingleImage = async (
  * Upload images in batches
  */
 const uploadBatch = async (
-  collection: any,
+  collection: Collection,
   images: ImageFileInfo[],
-  skipExisting: boolean = true,
 ): Promise<UploadResult> => {
   const result: UploadResult = {
     success: 0,
@@ -86,7 +70,7 @@ const uploadBatch = async (
   };
 
   for (const image of images) {
-    const uploadResult = await uploadSingleImage(collection, image, skipExisting);
+    const uploadResult = await uploadSingleImage(collection, image);
     
     if (uploadResult.success) {
       result.success++;
@@ -110,12 +94,11 @@ const uploadBatch = async (
 /**
  * Main upload function
  */
-export const uploadImages = async (options: UploadOptions): Promise<UploadResult> => {
-  const { directory, batchSize = 10, skipExisting = true } = options;
+const uploadImages = async (options: UploadOptions): Promise<UploadResult> => {
+  const { directory, batchSize = 10 } = options;
   
   console.log(`🚀 Starting image upload from directory: ${directory}`);
   console.log(`📊 Batch size: ${batchSize}`);
-  console.log(`⏭️  Skip existing: ${skipExisting}`);
   console.log('');
 
   try {
@@ -147,7 +130,7 @@ export const uploadImages = async (options: UploadOptions): Promise<UploadResult
       const batch = imageFiles.slice(i, i + batchSize);
       console.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(imageFiles.length / batchSize)} (${batch.length} images)`);
       
-      const batchResult = await uploadBatch(collection, batch, skipExisting);
+      const batchResult = await uploadBatch(collection, batch);
       
       totalResult.success += batchResult.success;
       totalResult.failed += batchResult.failed;
@@ -205,17 +188,15 @@ const main = async () => {
     const result = await uploadImages({
       directory,
       batchSize,
-      skipExisting: true,
     });
 
-    console.log('🎉 Upload completed!');
-    console.log(`✅ Successfully uploaded: ${result.success} images`);
-    console.log(`⏭️  Skipped: ${result.skipped} images`);
-    console.log(`❌ Failed: ${result.failed} images`);
+    console.warn('🎉 Upload completed!');
+    console.warn(`✅ Successfully uploaded: ${result.success} images`);
+    console.warn(`⏭️  Skipped: ${result.skipped} images`);
+    console.warn(`❌ Failed: ${result.failed} images`);
     
     if (result.errors.length > 0) {
-      console.log('');
-      console.log('❌ Errors:');
+      console.error('❌ Errors:');
       result.errors.forEach(error => console.log(`  - ${error}`));
     }
   } catch (error) {

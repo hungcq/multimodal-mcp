@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, extname, basename } from 'path';
-const exifr = require('exifr');
 
-export interface FileInfo {
+import exifr from 'exifr';
+
+interface FileInfo {
   name: string;
   path: string;
   size: number;
@@ -20,7 +21,7 @@ export interface ImageFileInfo extends FileInfo {
 /**
  * List all files in a directory
  */
-export const listFiles = (path: string): FileInfo[] => {
+const listFiles = (path: string): FileInfo[] => {
   try {
     return readdirSync(path)
       .map((name) => {
@@ -44,7 +45,7 @@ export const listFiles = (path: string): FileInfo[] => {
 /**
  * Get base64 encoding of a file
  */
-export const getBase64 = (filePath: string): string => {
+const getBase64 = (filePath: string): string => {
   try {
     return readFileSync(filePath, { encoding: 'base64' });
   } catch (error) {
@@ -56,7 +57,7 @@ export const getBase64 = (filePath: string): string => {
 /**
  * Extract GPS coordinates from image EXIF data
  */
-export const getImageCoordinates = async (filePath: string): Promise<{ latitude: number; longitude: number } | null> => {
+const getImageCoordinates = async (filePath: string): Promise<{ latitude: number; longitude: number } | null> => {
   try {
     const exifData = await exifr.parse(filePath, { gps: true });
     
@@ -77,7 +78,7 @@ export const getImageCoordinates = async (filePath: string): Promise<{ latitude:
 /**
  * Check if file is a supported image format
  */
-export const isImageFile = (extension: string): boolean => {
+const isImageFile = (extension: string): boolean => {
   const supportedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg'];
   return supportedExtensions.includes(extension);
 };

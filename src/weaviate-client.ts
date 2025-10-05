@@ -1,24 +1,19 @@
-import weaviate, { type WeaviateClient, ApiKey } from 'weaviate-client';
+import { type WeaviateClient } from 'weaviate-client';
+
 import 'dotenv/config';
+import { googleGcloudAuth } from './google-service-auth';
 
 let client: WeaviateClient;
+let lastTokenRefresh: number = 0;
+const TOKEN_REFRESH_INTERVAL = 60 * 60 * 1000; // 60 minutes
 
 export const getWeaviateClient = async (): Promise<WeaviateClient> => {
-  if (!client) {
-    const weaviateUrl = process.env.WEAVIATE_URL;
-    const weaviateApiKey = process.env.WEAVIATE_API_KEY;
-    const googleApiKey = process.env.GOOGLE_API_KEY;
-
-    if (!weaviateUrl || !weaviateApiKey || !googleApiKey) {
-      throw new Error('Missing required environment variables. Please check your .env file.');
-    }
-
-    client = await weaviate.connectToWeaviateCloud(weaviateUrl, {
-      authCredentials: new weaviate.ApiKey(weaviateApiKey),
-      headers: {
-        'X-Goog-Api-Key': googleApiKey || '',
-      }
-    });
+  const now = Date.now();
+  
+  // Re-instantiate client every 60 minutes to ensure fresh tokens
+  if (!client || (now - lastTokenRefresh) > TOKEN_REFRESH_INTERVAL) {
+    client = await googleGcloudAuth.reInstantiateWeaviate();
+    lastTokenRefresh = now;
   }
 
   return client;

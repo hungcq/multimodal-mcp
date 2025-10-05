@@ -1,10 +1,11 @@
 #!/usr/bin/env ts-node
 
-import express, { Request, Response } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { z } from 'zod';
 import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import express, { Request, Response } from 'express';
+import { z } from 'zod';
+
 import { searchImages } from './search-images';
 import { closeWeaviateClient } from './weaviate-client';
 
@@ -32,12 +33,10 @@ const getServer = () => {
     'Search through our photo albums using natural language queries. Find photos by description, locations, objects, or any visual content.',
     {
       query: z.string().describe('Natural language description of what you want to find in the photos (e.g., "sunset over mountains", "people at the beach", "dogs playing")'),
-      limit: z.number().describe('Maximum number of photos to return').min(1).max(50).default(10)
+      limit: z.number().describe('Maximum number of photos to return').min(1).max(10).default(5)
     },
-    async ({ query, limit }, extra): Promise<CallToolResult> => {
-      try {
-        console.log(`🔍 Searching photo albums for: "${query}" (limit: ${limit})`);
-        
+    async ({ query, limit }): Promise<CallToolResult> => {
+      try {        
         // Perform the search
         const results = await searchImages(query as string, limit as number);
         
@@ -58,8 +57,8 @@ const getServer = () => {
             ? `📍 Location: ${result.coordinates.latitude.toFixed(6)}, ${result.coordinates.longitude.toFixed(6)}`
             : '📍 Location: No GPS data available';
           
-          const similarityInfo = result.distance !== undefined 
-            ? `🎯 Similarity: ${((1 - result.distance) * 100).toFixed(1)}%`
+          const similarityInfo = result.score !== undefined 
+            ? `🎯 Similarity: ${(result.score * 100).toFixed(1)}%`
             : '';
           
           return `${index + 1}. **${result.title}${result.extension}**
@@ -105,9 +104,7 @@ app.use(express.json());
 const transports: Record<string, SSEServerTransport> = {};
 
 // SSE endpoint for establishing the stream
-app.get('/mcp', async (req: Request, res: Response) => {
-  console.log('Received GET request to /mcp (establishing SSE stream)');
-
+app.get('/mcp', async (_: Request, res: Response) => {
   try {
     // Create a new SSE transport for the client
     // The endpoint for POST messages is '/messages'
@@ -169,7 +166,7 @@ app.post('/messages', async (req: Request, res: Response) => {
 });
 
 // Start the server
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 443;
 app.listen(PORT, (error?: Error) => {
   if (error) {
     console.error('Failed to start server:', error);
