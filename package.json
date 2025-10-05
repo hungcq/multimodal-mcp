@@ -1,0 +1,39 @@
+{
+  "name": "multimodal-mcp",
+  "version": "1.0.0",
+  "description": "TypeScript MCP server for searching photo albums with multimodal AI capabilities",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "upload": "ts-node src/upload-images.ts",
+    "mcp-server": "ts-node src/mcp-server.ts"
+  },
+  "keywords": [
+    "weaviate",
+    "multimodal",
+    "images",
+    "typescript",
+    "mcp",
+    "model-context-protocol",
+    "photo-search",
+    "ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.19.1",
+    "dotenv": "^16.3.1",
+    "exifr": "^7.1.3",
+    "express": "^4.18.2",
+    "weaviate-client": "^3.9.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  }
+}
