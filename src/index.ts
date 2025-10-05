@@ -1,114 +1,227 @@
 #!/usr/bin/env ts-node
 
-/**
- * Main entry point for the Multimodal MCP project
- * 
- * This file provides a simple CLI interface to access all functionality
- */
-
-import { uploadImages } from './upload-images';
-import { searchImages, getAllImages } from './search-images';
-import { createImagesCollection, deleteImagesCollection } from './collection';
+import express, { Request, Response } from 'express';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { z } from 'zod';
+import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { searchImages } from './search-images';
 import { closeWeaviateClient } from './weaviate-client';
 
-const showHelp = () => {
-  console.log('Multimodal MCP - Image Upload and Search for Weaviate');
-  console.log('');
-  console.log('Usage: npm run dev <command> [options]');
-  console.log('');
-  console.log('Commands:');
-  console.log('  upload <directory>     Upload images from directory to Weaviate');
-  console.log('  search <query>         Search for images using text query');
-  console.log('  list                   List all images in the collection');
-  console.log('  create-collection      Create the Images collection');
-  console.log('  delete-collection      Delete the Images collection');
-  console.log('  help                   Show this help message');
-  console.log('');
-  console.log('Examples:');
-  console.log('  npm run dev upload ./images');
-  console.log('  npm run dev search "sunset"');
-  console.log('  npm run dev list');
-  console.log('');
-  console.log('For more detailed usage, use the specific scripts:');
-  console.log('  npm run upload --help');
-  console.log('  npm run search --help');
+/**
+ * Photo Album Search MCP Server
+ * 
+ * The server exposes two endpoints:
+ * - /mcp: For establishing the SSE stream (GET)
+ * - /messages: For receiving client messages (POST)
+ */
+
+// Create an MCP server instance
+
+const getServer = () => {
+  const server = new McpServer(
+    {
+      name: 'photo-album-search',
+      version: '1.0.0'
+    },
+    { capabilities: { tools: {} } }
+  );
+
+  server.tool(
+    'search_photo_albums',
+    'Search through our photo albums using natural language queries. Find photos by description, locations, objects, or any visual content.',
+    {
+      query: z.string().describe('Natural language description of what you want to find in the photos (e.g., "sunset over mountains", "people at the beach", "dogs playing")'),
+      limit: z.number().describe('Maximum number of photos to return').min(1).max(50).default(10)
+    },
+    async ({ query, limit }, extra): Promise<CallToolResult> => {
+      try {
+        console.log(`🔍 Searching photo albums for: "${query}" (limit: ${limit})`);
+        
+        // Perform the search
+        const results = await searchImages(query as string, limit as number);
+        
+        if (results.length === 0) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `No photos found matching "${query}". Try a different search term or check if photos have been uploaded to the collection.`,
+              },
+            ],
+          };
+        }
+
+        // Format the results
+        const formattedResults = results.map((result, index) => {
+          const coordInfo = result.coordinates 
+            ? `📍 Location: ${result.coordinates.latitude.toFixed(6)}, ${result.coordinates.longitude.toFixed(6)}`
+            : '📍 Location: No GPS data available';
+          
+          const similarityInfo = result.distance !== undefined 
+            ? `🎯 Similarity: ${((1 - result.distance) * 100).toFixed(1)}%`
+            : '';
+          
+          return `${index + 1}. **${result.title}${result.extension}**
+   🔗 URL: ${result.url}
+   ${coordInfo}
+   ${similarityInfo}`;
+        }).join('\n\n');
+
+        const summary = `Found ${results.length} photo(s) matching "${query}":\n\n${formattedResults}`;
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: summary,
+            },
+          ],
+        };
+
+      } catch (error) {
+        console.error('Error searching photo albums:', error);
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error searching photo albums: ${error instanceof Error ? error.message : 'Unknown error'}. Please check your Weaviate connection and try again.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+  
+  return server;
 };
 
-const main = async () => {
-  const args = process.argv.slice(2);
-  
-  if (args.length === 0 || args[0] === 'help') {
-    showHelp();
+const app = express();
+app.use(express.json());
+
+// Store transports by session ID
+const transports: Record<string, SSEServerTransport> = {};
+
+// SSE endpoint for establishing the stream
+app.get('/mcp', async (req: Request, res: Response) => {
+  console.log('Received GET request to /mcp (establishing SSE stream)');
+
+  try {
+    // Create a new SSE transport for the client
+    // The endpoint for POST messages is '/messages'
+    const transport = new SSEServerTransport('/messages', res);
+
+    // Store the transport by session ID
+    const sessionId = transport.sessionId;
+    transports[sessionId] = transport;
+
+    // Set up onclose handler to clean up transport when closed
+    transport.onclose = () => {
+      console.log(`SSE transport closed for session ${sessionId}`);
+      delete transports[sessionId];
+    };
+
+    // Connect the transport to the MCP server
+    const server = getServer();
+    await server.connect(transport);
+
+    console.log(`Established SSE stream with session ID: ${sessionId}`);
+  } catch (error) {
+    console.error('Error establishing SSE stream:', error);
+    if (!res.headersSent) {
+      res.status(500).send('Error establishing SSE stream');
+    }
+  }
+});
+
+// Messages endpoint for receiving client JSON-RPC requests
+app.post('/messages', async (req: Request, res: Response) => {
+  console.log('Received POST request to /messages');
+
+  // Extract session ID from URL query parameter
+  // In the SSE protocol, this is added by the client based on the endpoint event
+  const sessionId = req.query.sessionId as string | undefined;
+
+  if (!sessionId) {
+    console.error('No session ID provided in request URL');
+    res.status(400).send('Missing sessionId parameter');
     return;
   }
 
-  const command = args[0];
-  
-  try {
-    switch (command) {
-      case 'upload':
-        if (args.length < 2) {
-          console.error('❌ Please provide a directory path');
-          console.log('Usage: npm run dev upload <directory>');
-          process.exit(1);
-        }
-        const uploadResult = await uploadImages({
-          directory: args[1],
-          batchSize: 10,
-          skipExisting: false
-        });
-        console.log('🎉 Upload completed!');
-        console.log(`✅ Successfully uploaded: ${uploadResult.success} images`);
-        console.log(`⏭️  Skipped: ${uploadResult.skipped} images`);
-        console.log(`❌ Failed: ${uploadResult.failed} images`);
-        break;
-        
-      case 'search':
-        if (args.length < 2) {
-          console.error('❌ Please provide a search query');
-          console.log('Usage: npm run dev search <query>');
-          process.exit(1);
-        }
-        const searchResults = await searchImages(args[1], 10);
-        console.log(`🔍 Found ${searchResults.length} results for "${args[1]}":`);
-        searchResults.forEach((result, index) => {
-          console.log(`${index + 1}. ${result.title}${result.extension} (${result.url})`);
-        });
-        break;
-        
-      case 'list':
-        const allImages = await getAllImages(50);
-        console.log(`📋 Found ${allImages.length} images in collection:`);
-        allImages.forEach((image, index) => {
-          console.log(`${index + 1}. ${image.title}${image.extension} (${image.url})`);
-        });
-        break;
-        
-      case 'create-collection':
-        await createImagesCollection();
-        console.log('✅ Collection created successfully');
-        break;
-        
-      case 'delete-collection':
-        await deleteImagesCollection();
-        console.log('✅ Collection deleted successfully');
-        break;
-        
-      default:
-        console.error(`❌ Unknown command: ${command}`);
-        showHelp();
-        process.exit(1);
-    }
-  } catch (error) {
-    console.error('❌ Command failed:', error);
-    process.exit(1);
-  } finally {
-    await closeWeaviateClient();
+  const transport = transports[sessionId];
+  if (!transport) {
+    console.error(`No active transport found for session ID: ${sessionId}`);
+    res.status(404).send('Session not found');
+    return;
   }
-};
 
-// Run the CLI if this file is executed directly
-if (require.main === module) {
-  main();
-}
+  try {
+    // Handle the POST message with the transport
+    await transport.handlePostMessage(req, res, req.body);
+  } catch (error) {
+    console.error('Error handling request:', error);
+    if (!res.headersSent) {
+      res.status(500).send('Error handling request');
+    }
+  }
+});
 
+// Start the server
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+app.listen(PORT, (error?: Error) => {
+  if (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+  console.log(`Photo Album Search MCP Server listening on port ${PORT}`);
+  console.log(`🔗 SSE endpoint: http://localhost:${PORT}/mcp`);
+  console.log(`📨 Messages endpoint: http://localhost:${PORT}/messages`);
+  console.log('🔍 Available tools:');
+  console.log('   - search_photo_albums: Search photos using natural language');
+  console.log('💡 Use natural language to search through your photo collection');
+});
+
+// Handle server shutdown
+process.on('SIGINT', async () => {
+  console.log('Shutting down server...');
+
+  // Close all active transports to properly clean up resources
+  for (const sessionId in transports) {
+    try {
+      console.log(`Closing transport for session ${sessionId}`);
+      await transports[sessionId].close();
+      delete transports[sessionId];
+    } catch (error) {
+      console.error(`Error closing transport for session ${sessionId}:`, error);
+    }
+  }
+
+  // Close Weaviate connection
+  await closeWeaviateClient();
+  
+  console.log('Server shutdown complete');
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('Shutting down server...');
+
+  // Close all active transports to properly clean up resources
+  for (const sessionId in transports) {
+    try {
+      console.log(`Closing transport for session ${sessionId}`);
+      await transports[sessionId].close();
+      delete transports[sessionId];
+    } catch (error) {
+      console.error(`Error closing transport for session ${sessionId}:`, error);
+    }
+  }
+
+  // Close Weaviate connection
+  await closeWeaviateClient();
+  
+  console.log('Server shutdown complete');
+  process.exit(0);
+});
