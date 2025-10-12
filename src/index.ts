@@ -2,12 +2,10 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import express, { Request, Response } from 'express';
-import { z } from 'zod';
 
-import { searchImages } from './search-images';
 import { closeWeaviateClient } from './weaviate-client';
+import { TOOL_NAME, TOOL_DESCRIPTION, toolInputSchema, handleSearchPhotoAlbums } from './tool-definitions';
 
 /**
  * Photo Album Search MCP Server
@@ -29,69 +27,10 @@ const getServer = () => {
   );
 
   server.tool(
-    'search_photo_albums',
-    'Search through our photo albums using natural language queries. Find photos by description, locations, objects, or any visual content.',
-    {
-      query: z.string().describe('Natural language description of what you want to find in the photos (e.g., "sunset over mountains", "people at the beach", "dogs playing")'),
-      limit: z.number().describe('Maximum number of photos to return').min(1).max(10).default(5)
-    },
-    async ({ query, limit }): Promise<CallToolResult> => {
-      try {        
-        // Perform the search
-        const results = await searchImages(query as string, limit as number);
-        
-        if (results.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `No photos found matching "${query}". Try a different search term or check if photos have been uploaded to the collection.`,
-              },
-            ],
-          };
-        }
-
-        // Format the results
-        const formattedResults = results.map((result, index) => {
-          const coordInfo = result.coordinates 
-            ? `📍 Location: ${result.coordinates.latitude.toFixed(6)}, ${result.coordinates.longitude.toFixed(6)}`
-            : '📍 Location: No GPS data available';
-          
-          const similarityInfo = result.score !== undefined 
-            ? `🎯 Similarity: ${(result.score * 100).toFixed(1)}%`
-            : '';
-          
-          return `${index + 1}. **${result.title}${result.extension}**
-   🔗 URL: ${result.url}
-   ${coordInfo}
-   ${similarityInfo}`;
-        }).join('\n\n');
-
-        const summary = `Found ${results.length} photo(s) matching "${query}":\n\n${formattedResults}`;
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: summary,
-            },
-          ],
-        };
-
-      } catch (error) {
-        console.error('Error searching photo albums:', error);
-        
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error searching photo albums: ${error instanceof Error ? error.message : 'Unknown error'}. Please check your Weaviate connection and try again.`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
+    TOOL_NAME,
+    TOOL_DESCRIPTION,
+    toolInputSchema,
+    handleSearchPhotoAlbums
   );
   
   return server;

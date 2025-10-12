@@ -26,18 +26,7 @@ A TypeScript script to upload images from a folder to a Weaviate collection with
    npm install
    ```
 
-3. Set up your environment variables by copying the example file:
-   ```bash
-   cp env.example .env
-   ```
-
-4. Edit the `.env` file with your credentials:
-   ```env
-   WEAVIATE_URL=https://your-cluster-url.weaviate.network
-   WEAVIATE_API_KEY=your-weaviate-api-key
-   GOOGLE_API_KEY=your-google-api-key
-   GOOGLE_PROJECT_ID=your-google-project-id
-   ```
+3. Set up your environment variables in .env file.
 
 ## Setup Weaviate
 
@@ -48,9 +37,31 @@ A TypeScript script to upload images from a folder to a Weaviate collection with
 
 2. **Set up Google Vertex AI**:
    - Go to [Google Cloud Console](https://console.cloud.google.com/)
-   - Enable Vertex AI API
-   - Create an API key or service account
+   - Enable Vertex AI API and Generative Language API
+   - Create a service account with the following roles:
+     - `Vertex AI User`
+     - `Generative Language User`
+   - Download the service account JSON key file
+   - Set the `GOOGLE_SERVICE_ACCOUNT_PATH` environment variable to point to this file
    - See [GOOGLE_SETUP.md](GOOGLE_SETUP.md) for detailed instructions
+
+## Authentication
+
+This project uses **Google Service Account** authentication for accessing Vertex AI APIs. The authentication system automatically:
+
+- ✅ Loads credentials from the service account JSON file
+- ✅ Refreshes access tokens automatically before they expire
+- ✅ Re-instantiates the Weaviate client every 60 minutes with fresh tokens
+- ✅ Handles token expiry gracefully
+
+### Service Account Setup
+
+1. Create a service account in Google Cloud Console
+2. Assign required roles (`Vertex AI User`, `Generative Language User`)
+3. Download the JSON key file
+4. Set `GOOGLE_SERVICE_ACCOUNT_PATH` in your `.env` file
+
+The authentication tokens are automatically refreshed, so you don't need to manually manage credentials or run `gcloud auth` commands.
 
 ## Usage
 
